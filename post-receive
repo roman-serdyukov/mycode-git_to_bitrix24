@@ -1,0 +1,55 @@
+#!/bin/bash
+
+commit=$(git log -1 | sed '1,/^$/d')            # Забираем последний коммит
+# commit='User1, Hello world, task_close'       # Вместо commit для теста кода
+
+text='task_close'                                 # С этой пометкой можно закрыть задачу черещ commit
+my_webhook='[your webhook address in bitrix24]'   # Сcылка из webhook Битрикс 24
+
+user_list=(user1 user2)                         # Список возможных исполнителей испольнителей, можно назначить, указав в commit
+
+if [[ "$commit" == *"${user_list[0]}"* ]]
+then RESPONSIBLE_ID=[ID user1 from bitrix24]    # Эта переменная нужна для создания задачи. ID потльзователя берется из Битрикс24
+elif [[ "$commit" == *"${user_list[1]}"* ]]
+then RESPONSIBLE_ID=[ID user2 from bitrix24]
+else author=$(git log -1 --pretty=format:"%an") # Если не назначен исполнитель, то берем автора commit
+fi
+
+
+if [ "$author" == "Roman" ]
+then RESPONSIBLE_ID=[ID user1 from bitrix24]
+elif [ "$author" == "Moor" ]
+then RESPONSIBLE_ID=[ID user2 from bitrix24]
+fi
+
+DIR=$(pwd)
+touch $DIR/bitrix_task_ad.json                   # В этот файл сохраним id созданной задачи. Он нужен для дальнейшего изменения статусов задачи
+id=$(cat $DIR/bitrix_task_ad.json) 
+task_id=$(sed -e 's/^"//' -e 's/"$//' <<< "$id") # Убираем кавычки
+
+
+# Выводим занчения переменных для проверки
+echo $DIR
+echo $commit
+echo $RESPONSIBLE_ID
+echo $text
+echo $my_webhook
+echo $task_id
+echo https://$my_webhook/tasks.task.add.json
+
+# Блок для теста кода
+# if [ -s $DIR/bitrix_task_ad.json ]
+# then echo пишем комментарий
+#    if [[ "$commit" == *"$text"* ]]
+#    then echo закрываем задачу
+#    fi
+# else echo создаем задачу $commit > $DIR/bitrix_task_ad.json && cat bitrix_task_ad.json
+# fi
+
+if [ -s $DIR/bitrix_task_ad.json ]
+then curl -X POST https://$my_webhook/task.commentitem.add.json --data "id=$task_id" --data "fields[POST_MESSAGE]=$commit"
+    if [[ "$commit" == *"$text"* ]]
+    then curl -X POST https://$my_webhook/tasks.task.update.json --data "id=$task_id" --data "fields[STATUS]=5"
+    fi
+else curl -X POST https://$my_webhook/tasks.task.add.json --data "fields[TITLE]=$commit" --data "fields[DESCRIPTION]=$DIR" --data "fields[RESPONSIBLE_ID]=$RESPONSIBLE_ID" | jq '.result.task.id' > $DIR/bitrix_task_ad.json
+fi
